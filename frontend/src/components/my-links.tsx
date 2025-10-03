@@ -48,8 +48,9 @@ export function MyLinks() {
 
   if (myLinks.length === 0) {
     return (
-      <div className="w-full md:mt-10 bg-black flex justify-center p-2 bg-yellow-950/30 border border-neutral-500/30">
-        <Card className="max-w-3xl w-full bg-neutral-900 backdrop-blur-sm border-neutral-500/30 shadow-[0_0_20px_theme(colors.neutral.500/20)]">
+      <div className="flex justify-center">
+      <div className="max-w-3xl w-full md:mt-10 bg-black flex  justify-center p-2 bg-yellow-950/30 border border-neutral-500/30">
+        <Card className=" w-full bg-neutral-900 backdrop-blur-sm border-neutral-500/30 ">
           <CardHeader>
             <CardTitle className="text-2xl text-neutral-300">
               You haven&apos;t created any links yet!
@@ -60,12 +61,13 @@ export function MyLinks() {
           </CardContent>
         </Card>
       </div>
+      </div>
     );
   }
 
   return (
-    <div className="w-full md:mt-10 bg-black flex justify-center p-2 bg-yellow-950/30 border border-neutral-500/30">
-      <Card className="max-w-6xl w-full bg-neutral-900 backdrop-blur-sm border-neutral-500/30 shadow-[0_0_20px_theme(colors.neutral.500/20)]">
+    <div className="w-full bg-black flex justify-center p-2 bg-yellow-950/30 border border-neutral-500/30">
+      <Card className="max-w-6xl w-full bg-neutral-900 backdrop-blur-sm border-neutral-500/30">
         <CardHeader>
           <CardTitle className="text-2xl text-neutral-300">My Links & Analytics</CardTitle>
         </CardHeader>

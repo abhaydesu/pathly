@@ -99,8 +99,8 @@ export function UrlShortenerForm() {
   } as const;
 
   return (
-    <div className="w-lg md:mt-10 bg-black flex justify-center p-2 bg-yellow-950/30 border border-neutral-500/30">
-      <Card className=" max-w-lg w-full bg-neutral-900 backdrop-blur-sm border-neutral-500/30 shadow-[0_0_20px_theme(colors.neutral.500/20)]">
+    <div className="w-lg -md:mt-10 bg-black flex justify-center p-2 bg-yellow-950/30 border border-neutral-500/30">
+      <Card className=" max-w-lg w-full bg-neutral-900 backdrop-blur-sm border-neutral-500/30">
         <CardHeader>
           <CardTitle className="text-2xl text-neutral-300">
             {shortUrl ? "Your link is ready" : "Create a short link"}

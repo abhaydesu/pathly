@@ -31,7 +31,7 @@ export default function App() {
         </div>
 
         <div className="mb-8 z-50">
-          <div className="flex items-center gap-2 rounded-lg border border-neutral-700/50 bg-neutral-900/60 p-1 shadow-[0_0_20px_theme(colors.neutral.500/20)]">
+          <div className="flex items-center gap-2 rounded-lg border border-neutral-700/50 bg-neutral-900/60 p-1">
             <Button
               onClick={() => setView("home")}
               variant={view === "home" ? "secondary" : "ghost"}
