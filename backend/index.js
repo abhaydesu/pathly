@@ -3,11 +3,13 @@ const express = require('express');
 const connectDB = require('./db');
 const urlRoutes = require('./routes/urls')
 const Url = require('./models/url');
+const cors = require('cors');
 
 connectDB();
 
 const app = express();
 
+app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3124;
