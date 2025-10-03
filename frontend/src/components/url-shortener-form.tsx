@@ -42,6 +42,8 @@ export function UrlShortenerForm() {
     setLoading(true);
     setError(null);
 
+    console.log("1. Submitting form with URL:", originalUrl);
+
     try {
       const apiUrl = `${import.meta.env.VITE_API_BASE_URL}/api/shorten`;
       const response = await fetch(apiUrl, {
@@ -49,10 +51,19 @@ export function UrlShortenerForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ originalUrl }),
       });
-
+      console.log("2. Received API Response:", response);
       if (response.ok) {
+        console.log("3. Response was OK. Processing data...");
         const data = await response.json();
         setShortUrl(data);
+
+        const myLinks = JSON.parse(localStorage.getItem('myLinks') || '[]');
+        if (!myLinks.some((link: { shortId: string }) => link.shortId === data.shortId)) {
+          myLinks.push(data);
+        }
+         console.log("4. Attempting to save this to localStorage:", myLinks);
+        localStorage.setItem('myLinks', JSON.stringify(myLinks))
+         console.log("5. Successfully saved to localStorage.");
         toast.success("Link shortened successfully!");
       } else {
         const errorData = await response.json();

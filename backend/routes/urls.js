@@ -1,6 +1,7 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
 const Url = require('../models/url');
+const Click = require('../models/Clicks');
 
 const router = express.Router();
 
@@ -30,6 +31,40 @@ router.post('/shorten', async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Server error '});
+    }
+})
+
+router.get('/analytics/:shortId', async (req, res) => {
+    try {
+        const url = await Url.findOne({ shortId: req.params.shortId });
+        if (!url) {
+            return res.status(404).json({ error: 'Url not found!' });
+        }
+
+        const clicksOverTime = await Click.aggregate([
+            {
+                $match: { urlId: url._id}
+            },
+            {
+                $group: {
+                    _id: {
+                        $dateToString: { format: '%Y-%m-%d', date: '$timestamp'}
+                    },
+                    count: { $sum: 1}
+                }
+            },
+            {
+                $sort: { _id: 1},
+            }
+        ])
+
+        res.json({
+            totalClicks: url.clicks,
+            clicksOverTime
+        })
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Server error' });
     }
 })
 

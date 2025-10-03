@@ -4,6 +4,7 @@ const connectDB = require('./db');
 const urlRoutes = require('./routes/urls')
 const Url = require('./models/url');
 const cors = require('cors');
+const Clicks = require('./models/Clicks')
 
 connectDB();
 
@@ -21,6 +22,11 @@ app.get('/:shortId', async (req, res) => {
         if (url) {
             url.clicks++;
             await url.save();
+
+            const newClick = new Clicks({
+                urlId: url._id
+            });
+            await newClick.save();
 
             return res.redirect(url.originalUrl);
         } else {
