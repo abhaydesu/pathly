@@ -1,11 +1,15 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "URL shortener API with click analytics",
+  "main": "dist/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon index.js"
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +18,31 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.7.1",
+    "ioredis": "^5.11.1",
     "mongoose": "^8.19.0",
-    "nanoid": "^5.1.6"
+    "nanoid": "^5.1.6",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
+    "rate-limit-redis": "^6.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/ioredis-mock": "^8.2.8",
+    "@types/node": "^26.6.5",
+    "@types/supertest": "^7.2.1",
+    "ioredis-mock": "^8.13.1",
+    "mongodb-memory-server": "^11.3.0",
+    "pino-pretty": "^13.2.0",
+    "supertest": "^7.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
   }
 }
