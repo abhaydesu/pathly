@@ -35,7 +35,8 @@ export function createUrlService({ cache }: { cache: UrlCache }) {
 
         // Reuse an existing permanent link for the same URL instead of creating duplicates
         if (!expiresAt) {
-            const existing = await Url.findOne({ originalUrl, isCustomAlias: false, expiresAt: null });
+            // $ne also matches links created before isCustomAlias existed
+            const existing = await Url.findOne({ originalUrl, isCustomAlias: { $ne: true }, expiresAt: null });
             if (existing) return { url: existing, created: false };
         }
 

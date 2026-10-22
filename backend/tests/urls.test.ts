@@ -30,6 +30,14 @@ describe('POST /api/shorten', () => {
         expect(second.body.shortId).toBe(first.body.shortId);
     });
 
+    it('reuses links created before isCustomAlias existed', async () => {
+        await Url.collection.insertOne({ originalUrl: 'https://legacy.com', shortId: 'legacy1', clicks: 0, createdAt: new Date() });
+        const res = await shorten({ originalUrl: 'https://legacy.com' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.shortId).toBe('legacy1');
+    });
+
     it.each([
         [{}, 'Original URL is required'],
         [{ originalUrl: '' }, 'Original URL is required'],
