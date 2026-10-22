@@ -4,4 +4,5 @@ export type LinkData = {
   shortId: string;
   clicks: number;
   createdAt: string;
+  expiresAt?: string | null;
 };
