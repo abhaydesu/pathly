@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { Link as LinkIcon, Loader2, MousePointerClick } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { buttonClasses } from "@/components/ui/button-variants";
@@ -14,12 +14,6 @@ type AnalyticsData = {
 };
 
 const CHART_COLOR = "#2667ff";
-
-const containerVariants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" } },
-  exit: { opacity: 0, y: -12, transition: { duration: 0.2, ease: "easeIn" } },
-} as const;
 
 const cardClass =
   "rounded-2xl bg-white shadow-sm shadow-black/10 ring-1 ring-black/10 dark:bg-neutral-900 dark:shadow-black/40 dark:ring-white/10";
@@ -69,12 +63,20 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
   );
 }
 
+// What the analytics panel is currently showing. Kept separate from the selected link so the
+// previous result stays on screen (dimmed) while the next one loads, instead of collapsing.
+type PanelView = { link: LinkData; analytics: AnalyticsData | null; error: string | null };
+
+const formatCreated = (link: LinkData) =>
+  new Date(link.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
 export function MyLinks({ refreshKey }: { refreshKey?: number }) {
   const [myLinks, setMyLinks] = useState<LinkData[]>([]);
-  const [selectedLink, setSelectedLink] = useState<LinkData | null>(null);
-  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<PanelView | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const cacheRef = useRef(new Map<string, AnalyticsData>());
+  const requestRef = useRef<AbortController | null>(null);
   const isDark = useTheme().theme === "dark";
   const axisColor = isDark ? "#a3a3a3" : "#737373";
 
@@ -82,30 +84,52 @@ export function MyLinks({ refreshKey }: { refreshKey?: number }) {
     setMyLinks(JSON.parse(localStorage.getItem("myLinks") || "[]"));
   }, [refreshKey]);
 
-  const fetchAnalytics = async (link: LinkData) => {
-    setSelectedLink(link);
+  useEffect(() => () => requestRef.current?.abort(), []);
+
+  const selectLink = async (link: LinkData) => {
+    setSelectedId(link.shortId);
+    // Show cached numbers straight away, then refresh them in the background
+    const cached = cacheRef.current.get(link.shortId);
+    if (cached) setView({ link, analytics: cached, error: null });
+
+    // Only the latest click may update the panel
+    requestRef.current?.abort();
+    const request = new AbortController();
+    requestRef.current = request;
     setLoading(true);
-    setAnalytics(null);
-    setError(null);
+
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/analytics/${link.shortId}`);
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/analytics/${link.shortId}`, {
+        signal: request.signal,
+      });
       if (res.ok) {
-        setAnalytics(await res.json());
-      } else if (res.status === 404) {
-        setError("This link no longer exists. It may have expired.");
+        const data: AnalyticsData = await res.json();
+        cacheRef.current.set(link.shortId, data);
+        setView({ link, analytics: data, error: null });
       } else {
-        setError("Couldn't load analytics. Please try again.");
+        const error =
+          res.status === 404
+            ? "This link no longer exists. It may have expired."
+            : "Couldn't load analytics. Please try again.";
+        setView({ link, analytics: null, error });
       }
     } catch {
-      setError("Couldn't reach the server. Please try again.");
-    } finally {
-      setLoading(false);
+      if (request.signal.aborted) return;
+      setView({ link, analytics: null, error: "Couldn't reach the server. Please try again." });
     }
+    if (requestRef.current === request) setLoading(false);
+  };
+
+  const clearSelection = () => {
+    requestRef.current?.abort();
+    setSelectedId(null);
+    setView(null);
+    setLoading(false);
   };
 
   if (myLinks.length === 0) {
     return (
-      <div className="relative border-y border-neutral-200 dark:border-neutral-800 px-4 py-16 [--pattern-fg:rgb(10_10_10/0.05)] dark:[--pattern-fg:rgb(255_255_255/0.05)] md:py-20">
+      <div className="relative border-y border-neutral-200 px-4 py-16 [--pattern-fg:rgb(10_10_10/0.05)] md:py-20 dark:border-neutral-800 dark:[--pattern-fg:rgb(255_255_255/0.05)]">
         <HatchPattern />
         <div className={cn(cardClass, "relative mx-auto max-w-sm p-8 text-center")}>
           <div className="mx-auto flex size-10 items-center justify-center rounded-lg bg-neutral-100 shadow-sm shadow-black/10 ring-1 ring-black/10 dark:bg-neutral-800 dark:ring-white/10">
@@ -121,33 +145,101 @@ export function MyLinks({ refreshKey }: { refreshKey?: number }) {
     );
   }
 
+  const analytics = view?.analytics;
+  // Dim the current result while a different link (or a refresh) is loading
+  const stale = loading && (!analytics || view?.link.shortId !== selectedId);
+
+  let chartBody: React.ReactNode;
+  if (analytics) {
+    chartBody =
+      analytics.clicksOverTime.length === 0 ? (
+        <p className="flex h-full items-center justify-center text-sm text-neutral-400">No clicks yet.</p>
+      ) : (
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={analytics.clicksOverTime} margin={{ top: 5, right: 8, left: -24, bottom: 0 }}>
+            <defs>
+              <linearGradient id="clicksFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CHART_COLOR} stopOpacity={0.2} />
+                <stop offset="100%" stopColor={CHART_COLOR} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} stroke={isDark ? "#262626" : "#e5e5e5"} strokeDasharray="2 4" />
+            <XAxis
+              dataKey="_id"
+              tickLine={false}
+              axisLine={false}
+              tick={{ fill: axisColor, fontSize: 11 }}
+              tickFormatter={(d: string) => d.slice(5)}
+            />
+            <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fill: axisColor, fontSize: 11 }} />
+            <Tooltip content={<ChartTooltip />} cursor={{ stroke: isDark ? "#404040" : "#d4d4d4" }} />
+            <Area
+              type="monotone"
+              dataKey="count"
+              stroke={CHART_COLOR}
+              strokeWidth={2}
+              fill="url(#clicksFill)"
+              dot={{ r: 3, fill: CHART_COLOR, strokeWidth: 0 }}
+              activeDot={{ r: 5, fill: CHART_COLOR, stroke: isDark ? "#171717" : "#ffffff", strokeWidth: 2 }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      );
+  } else if (view?.error) {
+    chartBody = <p className="flex h-full items-center justify-center px-6 text-center text-sm text-neutral-500">{view.error}</p>;
+  } else if (loading) {
+    chartBody = (
+      <p className="flex h-full items-center justify-center gap-2 text-sm text-neutral-500">
+        <Loader2 className="size-4 animate-spin text-primary" />
+        Loading…
+      </p>
+    );
+  } else {
+    chartBody = (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-neutral-500">
+        <span className="flex size-10 items-center justify-center rounded-lg bg-neutral-100 shadow-sm shadow-black/10 ring-1 ring-black/10 dark:bg-neutral-800 dark:ring-white/10">
+          <MousePointerClick className="size-4 text-neutral-500" />
+        </span>
+        Select a link to see its stats.
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-1 border-y border-neutral-200 dark:border-neutral-800 md:grid-cols-3">
+    <div className="grid grid-cols-1 border-y border-neutral-200 md:grid-cols-3 dark:border-neutral-800">
       {/* Link list */}
-      <div className="flex flex-col border-b border-neutral-200 dark:border-neutral-800 p-4 md:max-h-[640px] md:border-r md:border-b-0 md:p-6">
-        <p className="mb-3 flex items-center px-1 text-sm font-medium text-neutral-800 dark:text-neutral-200">
+      <div className="flex flex-col border-b border-neutral-200 p-4 md:max-h-[640px] md:border-r md:border-b-0 md:p-6 dark:border-neutral-800">
+        <p className="mb-2 flex items-center px-1 text-sm font-medium text-neutral-800 dark:text-neutral-200">
           My links
           <span className="ml-auto rounded-md bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-500 ring-1 ring-black/5 dark:bg-neutral-800 dark:text-neutral-400 dark:ring-white/10">
             {myLinks.length}
           </span>
         </p>
 
-        <ul className="-mr-2 flex max-h-72 flex-col gap-1 overflow-y-auto pr-2 md:max-h-none md:flex-1">
+        {/* Padding inside the scroll area (offset by negative margin) so the active item's ring and shadow aren't clipped */}
+        <ul className="-mr-3 -ml-1 flex max-h-72 flex-col gap-1 overflow-y-auto py-1.5 pr-3 pl-1 md:max-h-none md:flex-1">
           {myLinks.map((link) => {
-            const isActive = selectedLink?.shortId === link.shortId;
+            const isActive = selectedId === link.shortId;
             return (
               <li key={link.shortId}>
                 <button
-                  onClick={() => fetchAnalytics(link)}
+                  onClick={() => selectLink(link)}
+                  aria-pressed={isActive}
                   className={cn(
-                    "w-full cursor-pointer rounded-xl p-3 text-left transition",
-                    isActive ? "bg-white shadow-sm shadow-black/10 ring-1 ring-black/10 dark:bg-neutral-900 dark:ring-white/10"
+                    "w-full cursor-pointer rounded-xl p-3 text-left transition-colors",
+                    isActive
+                      ? "bg-white shadow-sm shadow-black/10 ring-1 ring-black/10 dark:bg-neutral-900 dark:ring-white/10"
                       : "hover:bg-neutral-50 dark:hover:bg-neutral-900/60"
                   )}
                 >
                   <div className="flex items-center gap-2">
                     {isActive && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
-                    <p className={cn("truncate font-mono text-sm", isActive ? "text-primary dark:text-tertiary" : "text-neutral-800 dark:text-neutral-200")}>
+                    <p
+                      className={cn(
+                        "truncate font-mono text-sm",
+                        isActive ? "text-primary dark:text-tertiary" : "text-neutral-800 dark:text-neutral-200"
+                      )}
+                    >
                       /{link.shortId}
                     </p>
                     {isExpired(link) && (
@@ -164,123 +256,45 @@ export function MyLinks({ refreshKey }: { refreshKey?: number }) {
         </ul>
       </div>
 
-      {/* Analytics */}
-      <div className="relative p-4 [--pattern-fg:rgb(10_10_10/0.05)] dark:[--pattern-fg:rgb(255_255_255/0.05)] md:col-span-2 md:p-6">
+      {/* Analytics: one fixed layout; only the values inside it change */}
+      <div className="relative p-4 [--pattern-fg:rgb(10_10_10/0.05)] md:col-span-2 md:p-6 dark:[--pattern-fg:rgb(255_255_255/0.05)]">
         <HatchPattern />
 
-        <div className="relative">
-          <AnimatePresence mode="wait">
-            {!selectedLink ? (
-              <motion.div
-                key="placeholder"
-                variants={containerVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className={cn(cardClass, "flex h-72 flex-col items-center justify-center gap-3 text-sm text-neutral-500")}
-              >
-                <span className="flex size-10 items-center justify-center rounded-lg bg-neutral-100 shadow-sm shadow-black/10 ring-1 ring-black/10 dark:bg-neutral-800 dark:ring-white/10">
-                  <MousePointerClick className="size-4 text-neutral-500" />
-                </span>
-                Select a link to see its stats.
-              </motion.div>
-            ) : loading ? (
-              <motion.div
-                key="loading"
-                variants={containerVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className={cn(cardClass, "flex h-72 items-center justify-center gap-2 text-sm text-neutral-500")}
-              >
-                <Loader2 className="size-4 animate-spin text-primary" />
-                Loading…
-              </motion.div>
-            ) : analytics ? (
-              <motion.div
-                key={`analytics-${selectedLink.shortId}`}
-                variants={containerVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="flex flex-col gap-4"
-              >
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  <PrimaryStatCard label="Total clicks" value={analytics.totalClicks} />
-                  <StatCard
-                    label="Created"
-                    value={new Date(selectedLink.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  />
-                  <div className="col-span-2 sm:col-span-1">
-                    <StatCard label="Short link" value={`/${selectedLink.shortId}`} mono />
-                  </div>
-                </div>
+        <div className={cn("relative flex flex-col gap-4 transition-opacity duration-200", stale && "opacity-60")}>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <PrimaryStatCard label="Total clicks" value={analytics?.totalClicks ?? "—"} />
+            <StatCard label="Created" value={view ? formatCreated(view.link) : "—"} />
+            <div className="col-span-2 sm:col-span-1">
+              <StatCard label="Short link" value={view ? `/${view.link.shortId}` : "—"} mono />
+            </div>
+          </div>
 
-                <div className={cn(cardClass, "p-5")}>
-                  <div className="mb-4 flex items-center justify-between">
-                    <p className={eyebrowClass}>Clicks per day</p>
-                    <button
-                      onClick={() => setSelectedLink(null)}
-                      className="cursor-pointer rounded-md px-2 py-1 text-xs text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  {analytics.clicksOverTime.length === 0 ? (
-                    <p className="flex h-56 items-center justify-center text-sm text-neutral-400">No clicks yet.</p>
-                  ) : (
-                    <div className="h-56">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={analytics.clicksOverTime} margin={{ top: 5, right: 8, left: -24, bottom: 0 }}>
-                          <defs>
-                            <linearGradient id="clicksFill" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor={CHART_COLOR} stopOpacity={0.2} />
-                              <stop offset="100%" stopColor={CHART_COLOR} stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid vertical={false} stroke={isDark ? "#262626" : "#e5e5e5"} strokeDasharray="2 4" />
-                          <XAxis
-                            dataKey="_id"
-                            tickLine={false}
-                            axisLine={false}
-                            tick={{ fill: axisColor, fontSize: 11 }}
-                            tickFormatter={(d: string) => d.slice(5)}
-                          />
-                          <YAxis
-                            allowDecimals={false}
-                            tickLine={false}
-                            axisLine={false}
-                            tick={{ fill: axisColor, fontSize: 11 }}
-                          />
-                          <Tooltip content={<ChartTooltip />} cursor={{ stroke: isDark ? "#404040" : "#d4d4d4" }} />
-                          <Area
-                            type="monotone"
-                            dataKey="count"
-                            stroke={CHART_COLOR}
-                            strokeWidth={2}
-                            fill="url(#clicksFill)"
-                            dot={{ r: 3, fill: CHART_COLOR, strokeWidth: 0 }}
-                            activeDot={{ r: 5, fill: CHART_COLOR, stroke: isDark ? "#171717" : "#ffffff", strokeWidth: 2 }}
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="error"
-                variants={containerVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className={cn(cardClass, "flex h-72 items-center justify-center px-6 text-center text-sm text-neutral-500")}
-              >
-                {error ?? "No analytics available for this link yet."}
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <div className={cn(cardClass, "p-5")}>
+            <div className="mb-4 flex h-6 items-center justify-between">
+              <p className={cn(eyebrowClass, "flex items-center gap-2")}>
+                Clicks per day
+                {loading && view && <Loader2 className="size-3.5 animate-spin text-primary" />}
+              </p>
+              {selectedId && (
+                <button
+                  onClick={clearSelection}
+                  className="cursor-pointer rounded-md px-2 py-1 text-xs text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {/* Fade in each new link's result in place; no exit animation, so the panel never collapses */}
+            <motion.div
+              key={view ? `${view.link.shortId}-${view.analytics ? "data" : "error"}` : loading ? "loading" : "empty"}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2 }}
+              className="h-56"
+            >
+              {chartBody}
+            </motion.div>
+          </div>
         </div>
       </div>
     </div>
