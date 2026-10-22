@@ -33,6 +33,26 @@ function Label({ htmlFor, children }: { htmlFor?: string; children: React.ReactN
   );
 }
 
+// Matches a URL scheme like "https://" or "mailto:", but not a port ("google.com:8080")
+const SCHEME = /^[a-z][a-z\d+.-]*:(?!\d)/i;
+
+// Accept bare domains like "google.com" by assuming https://. Returns null if the input
+// clearly isn't a web address. Other schemes are passed through for the backend to reject.
+function normalizeUrl(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const withScheme = SCHEME.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const { protocol, hostname } = new URL(withScheme);
+    const isWeb = protocol === "http:" || protocol === "https:";
+    // A bare word like "hello" parses as https://hello, so also require a dotted hostname
+    if (isWeb && !hostname.includes(".")) return null;
+    return withScheme;
+  } catch {
+    return null;
+  }
+}
+
 function saveToMyLinks(link: LinkData) {
   const myLinks: LinkData[] = JSON.parse(localStorage.getItem("myLinks") || "[]");
   if (!myLinks.some((l) => l.shortId === link.shortId)) {
@@ -51,6 +71,8 @@ export function UrlShortenerForm({ onCreated }: { onCreated?: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
 
+  const normalizedUrl = normalizeUrl(originalUrl);
+  const addedScheme = normalizedUrl !== null && normalizedUrl !== originalUrl.trim();
   const fullShortUrl = shortUrl ? `${import.meta.env.VITE_API_BASE_URL}/${shortUrl.shortId}` : "";
 
   const handleCopy = async () => {
@@ -70,9 +92,15 @@ export function UrlShortenerForm({ onCreated }: { onCreated?: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
 
+    const url = normalizeUrl(originalUrl);
+    if (!url) {
+      setError("Enter a valid URL, like example.com");
+      return;
+    }
+
+    setLoading(true);
     const alias = customAlias.trim();
 
     try {
@@ -80,7 +108,7 @@ export function UrlShortenerForm({ onCreated }: { onCreated?: () => void }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          originalUrl,
+          originalUrl: url,
           ...(alias && { customAlias: alias }),
           ...(expiryMs && { expiresAt: new Date(Date.now() + expiryMs).toISOString() }),
         }),
@@ -119,14 +147,25 @@ export function UrlShortenerForm({ onCreated }: { onCreated?: () => void }) {
             <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-5">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="originalUrl">Destination URL</Label>
+                {/* type="text" so the browser doesn't reject bare domains; inputMode keeps the URL keyboard on phones */}
                 <Input
                   id="originalUrl"
-                  type="url"
-                  placeholder="https://your-super-long-url.com/goes-here"
+                  type="text"
+                  inputMode="url"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="your-super-long-url.com/goes-here"
                   value={originalUrl}
                   onChange={(e) => setOriginalUrl(e.target.value)}
+                  aria-describedby={addedScheme ? "originalUrl-hint" : undefined}
                   required
                 />
+                {addedScheme && (
+                  <p id="originalUrl-hint" className="truncate text-xs text-neutral-400 dark:text-neutral-500">
+                    Will shorten <span className="font-mono text-neutral-500 dark:text-neutral-400">{normalizedUrl}</span>
+                  </p>
+                )}
               </div>
 
               <button
